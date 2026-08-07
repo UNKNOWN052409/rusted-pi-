@@ -1,0 +1,29 @@
+[package]
+name = "pi-native"
+version = "0.1.0"
+edition = "2021"
+description = "Pi native CLI — GPU detection, CPU monitoring, system info, agent runtime"
+# Lightweight single-binary approach. Communicates via stdin/stdout JSON.
+# No napi-rs dependency — works on any platform including Render/Linux.
+
+[[bin]]
+name = "pi-native"
+path = "src/main.rs"
+
+[[bin]]
+name = "pi-agent"
+path = "src/agent_bin.rs"
+
+[profile.release]
+lto = true
+strip = true
+codegen-units = 1
+opt-level = "z"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1.0.151"
+regex = "1.11.1"
+ureq = "2"
+url = "2.5.8"
+lazy_static = "1.4.0"

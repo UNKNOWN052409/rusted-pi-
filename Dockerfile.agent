@@ -1,0 +1,47 @@
+# pi-agent Rust binary — multi-stage Docker build for Render free tier
+# Final image: ~8 MB (vs Node's ~150 MB)
+
+# Stage 1: Build Rust binary
+FROM rust:1.77-slim-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+COPY packages/rust-core/ ./packages/rust-core/
+COPY packages/rust-core/Cargo.toml ./packages/rust-core/Cargo.toml
+
+RUN cargo build --release --manifest-path packages/rust-core/Cargo.toml --bin pi-agent && \
+    strip packages/rust-core/target/release/pi-agent
+
+# Stage 2: Minimal runtime
+FROM alpine:3.19
+
+# Install runtime dependencies for tool execution
+RUN apk add --no-cache \
+    ca-certificates \
+    bash \
+    git \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+WORKDIR /workspace
+
+# Copy only the binary
+COPY --from=builder /build/packages/rust-core/target/release/pi-agent /usr/local/bin/pi-agent
+
+# Health check endpoint
+COPY --from=builder /build/packages/rust-core/health.sh /health.sh
+RUN chmod +x /health.sh
+
+# Resource limits enforced by env
+ENV MAX_TOKENS=8192
+ENV MAX_TURNS=50
+
+# Expose health check port
+EXPOSE 8080
+
+# Run agent — reads JSON from HTTP body via a simple wrapper
+CMD ["pi-agent"]

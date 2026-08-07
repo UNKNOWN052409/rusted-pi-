@@ -1,0 +1,25 @@
+{
+	"name": "@pi/rust-core",
+	"version": "0.1.0",
+	"private": true,
+	"main": "index.js",
+	"type": "module",
+	"types": "index.d.ts",
+	"napi": {
+		"name": "rust-core",
+		"triples": {
+			"additional": ["x86_64-pc-windows-msvc"]
+		}
+	},
+	"scripts": {
+		"build": "cargo build --release && node scripts/copy-binary.js",
+		"build:debug": "cargo build && node scripts/copy-binary.js",
+		"test": "node --test test/*.test.ts"
+	},
+	"files": [
+		"index.js",
+		"index.d.ts",
+		"rust-core.win32-x64-msvc.node",
+		"prebuilds/"
+	]
+}

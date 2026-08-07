@@ -1,0 +1,23 @@
+# Render Blueprint — pi-agent Rust binary for free tier
+# Single service, no Node.js needed
+
+services:
+  - type: web
+    name: pi-agent
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.agent
+    dockerContext: .
+    envVars:
+      - key: API_KEY
+        sync: false  # Set in Render dashboard
+      - key: MODEL
+        value: deepseek-ai/deepseek-v4-flash
+      - key: ENDPOINT
+        value: https://webapi.ccwu.cc/v1/chat/completions
+      - key: MAX_TOKENS
+        value: "8192"
+      - key: MAX_TURNS
+        value: "50"
+    healthCheckPath: /health
+    numInstances: 1
