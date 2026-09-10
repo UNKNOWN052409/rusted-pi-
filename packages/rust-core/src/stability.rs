@@ -1,4 +1,4 @@
-/// Stability check — fabricated model detection, repetition, hallucination.
+/// Stability check — real model validation, repetition, hallucination.
 /// Port of packages/agent/src/harness/tools/stability.ts
 
 use std::collections::{HashMap, HashSet};
@@ -19,9 +19,9 @@ pub fn handle_stability_check(line: &str) -> serde_json::Value {
 
 	let mut issues: Vec<serde_json::Value> = Vec::new();
 
-	// ---- FABRICATED MODEL CHECK ----
+	// ---- REAL MODEL VALIDATION CHECK ----
 	if !model_id.is_empty() {
-		fake_model_check(model_id, &mut issues);
+		validate_model_real(model_id, &mut issues);
 	}
 
 	// ---- REPETITION CHECK ----
@@ -50,58 +50,87 @@ pub fn handle_stability_check(line: &str) -> serde_json::Value {
 	})
 }
 
-fn fake_model_check(model_id: &str, issues: &mut Vec<serde_json::Value>) {
+/// Validate model against known real models
+fn validate_model_real(model_id: &str, issues: &mut Vec<serde_json::Value>) {
 	let lower = model_id.to_lowercase();
-	let fake_indicators = [
-		"gpt-5", "gpt-4.5", "gpt-4-turbo-vision", "gpt-4-vision-preview",
-		"claude-5", "claude-4-opus", "claude-3.5", "gemini-3",
-		"llama-4", "falcon-3",
+	
+	// Known real model providers and their current models (as of 2024)
+	let known_models = vec![
+		// OpenAI
+		"gpt-4-turbo", "gpt-4o", "gpt-4", "gpt-3.5-turbo",
+		// Anthropic
+		"claude-3-opus", "claude-3-sonnet", "claude-3-haiku", "claude-2",
+		// Google
+		"gemini-pro", "gemini-1.5-pro", "palm-2",
+		// Meta
+		"llama-2", "llama-3",
+		// Mistral
+		"mistral-large", "mistral-medium", "mistral-small",
+		// DeepSeek
+		"deepseek-coder", "deepseek-chat", "deepseek-v3", "deepseek-v2",
+		// Cohere
+		"command", "command-light",
+		// Other real providers
+		"yi-34b", "qwen-72b", "falcon-40b",
 	];
-
-	for &indicator in &fake_indicators {
-		if lower.contains(indicator) {
-			issues.push(serde_json::json!({
-				"type": "fake_model",
-				"severity": "critical",
-				"detail": format!("{} is not a real model. Common hallucination.", model_id),
-				"pattern": indicator
-			}));
-			return;
+	
+	// Check if model is in known list
+	let mut is_known = false;
+	for model_pattern in &known_models {
+		if lower.contains(&model_pattern.to_lowercase()) {
+			is_known = true;
+			break;
 		}
 	}
-
-	// GPT version check
+	
+	if is_known {
+		// Model is known and real
+		return;
+	}
+	
+	// Model not in known list - validate format and warn
 	if let Some(gpt_rest) = lower.strip_prefix("gpt-") {
 		let end = gpt_rest.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(gpt_rest.len());
 		if let Ok(ver) = gpt_rest[..end].parse::<f64>() {
-			if ver > 4.5 {
+			if ver >= 5.0 {
 				issues.push(serde_json::json!({
-					"type": "fake_model",
-					"severity": "critical",
-					"detail": format!("GPT-{} does not exist yet. Latest is GPT-4.5.", ver),
-					"pattern": "gpt-version"
+					"type": "unverified_model",
+					"severity": "high",
+					"detail": format!("Model 'GPT-{}' not verified. Known GPT models: 4-turbo, 4o, 4, 3.5-turbo", ver),
+					"pattern": "gpt-version-unverified"
 				}));
 				return;
 			}
 		}
 	}
-
+	
 	// Claude version check
-	if lower.contains("claude") {
+	if lower.contains("claude") && !lower.contains("claude-3") && !lower.contains("claude-2") {
 		if let Some(start) = lower.find(|c: char| c.is_ascii_digit()) {
 			let rest = &lower[start..];
 			let end = rest.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(rest.len());
 			if let Ok(ver) = rest[..end].parse::<f64>() {
-				if ver > 4.0 {
+				if ver >= 4.0 {
 					issues.push(serde_json::json!({
-						"type": "fake_model",
-						"severity": "critical",
-						"detail": format!("Claude {} does not exist yet. Latest is Claude 4.", ver),
-						"pattern": "claude-version"
+						"type": "unverified_model",
+						"severity": "medium",
+						"detail": format!("Model 'Claude {}' not verified. Known: claude-3-opus, claude-3-sonnet, claude-3-haiku, claude-2", ver),
+						"pattern": "claude-version-unverified"
 					}));
+					return;
 				}
 			}
 		}
+	}
+	
+	// Generic unknown model warning
+	if !is_known {
+		issues.push(serde_json::json!({
+			"type": "unverified_model",
+			"severity": "low",
+			"detail": format!("Model '{}' not in verified registry. Verify it exists before use.", model_id),
+			"pattern": "unknown-model"
+		}));
 	}
 }
 

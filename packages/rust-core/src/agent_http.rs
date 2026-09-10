@@ -143,10 +143,29 @@ fn handle_agent(mut stream: TcpStream, body: &str, use_streaming: bool) {
     let existing_messages = crate::agent_session::load_session(&session_id).ok();
 
     // Build config from env vars
+    let api_key = std::env::var("API_KEY").unwrap_or_default();
+    let endpoint = std::env::var("ENDPOINT").unwrap_or_else(|_| "https://api.openai.com/v1/chat/completions".to_string());
+    let model = std::env::var("MODEL").unwrap_or_else(|_| "gpt-4-turbo".to_string());
+    
+    // Validate API key is set
+    if api_key.is_empty() {
+        let error = serde_json::json!({
+            "error": "API_KEY environment variable not set. Configure LLM credentials to use the agent.",
+            "hint": "Set API_KEY, MODEL, and ENDPOINT environment variables"
+        });
+        let body = serde_json::to_string(&error).unwrap();
+        let response = format!(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+            body.len(), body
+        );
+        let _ = stream.write_all(response.as_bytes());
+        return;
+    }
+    
     let config = crate::agent_types::AgentConfig {
-        api_key: std::env::var("API_KEY").unwrap_or_default(),
-        endpoint: std::env::var("ENDPOINT").unwrap_or_else(|_| "https://webapi.ccwu.cc/v1/chat/completions".to_string()),
-        model: std::env::var("MODEL").unwrap_or_else(|_| "deepseek-ai/deepseek-v4-flash".to_string()),
+        api_key,
+        endpoint,
+        model,
         max_tokens: std::env::var("MAX_TOKENS").ok().and_then(|v| v.parse().ok()).unwrap_or(8192),
         max_turns: std::env::var("MAX_TURNS").ok().and_then(|v| v.parse().ok()).unwrap_or(50),
         system_prompt: std::env::var("SYSTEM_PROMPT").unwrap_or_else(|_| {
