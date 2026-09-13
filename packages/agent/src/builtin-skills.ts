@@ -11,7 +11,13 @@ import { fileURLToPath } from "node:url";
 export const BUILTIN_SKILLS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "skills");
 
 /** Names of the skills that ship by default. */
-export const BUILTIN_SKILL_NAMES = ["brainstorming", "council", "doctor-check", "qa-tester"] as const;
+export const BUILTIN_SKILL_NAMES = [
+	"brainstorming",
+	"council",
+	"doctor-check",
+	"qa-tester",
+	"youtube-ui-reverse",
+] as const;
 
 /** Returns the absolute path to a built-in skill directory. */
 export function builtinSkillPath(name: string): string {

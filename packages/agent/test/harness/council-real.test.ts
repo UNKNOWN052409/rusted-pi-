@@ -10,7 +10,7 @@ describe("builtin-skills", () => {
 	});
 
 	it("ships the expected built-in skills as SKILL.md files", () => {
-		for (const name of ["brainstorming", "council", "doctor-check", "qa-tester"]) {
+		for (const name of ["brainstorming", "council", "doctor-check", "qa-tester", "youtube-ui-reverse"]) {
 			const skillFile = join(BUILTIN_SKILLS_DIR, name, "SKILL.md");
 			expect(existsSync(skillFile), `${name} SKILL.md missing`).toBe(true);
 		}
