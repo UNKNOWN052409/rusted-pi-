@@ -11,6 +11,11 @@
  * injected `exec` so tests run without a real GPU.
  */
 
+import { exec } from "node:child_process";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
 export interface ExecResult {
 	code: number;
 	stdout: string;
@@ -22,7 +27,6 @@ export type ExecFn = (command: string, timeoutMs?: number) => Promise<ExecResult
 
 /** Default executor using node:child_process exec with a shell. */
 async function defaultExec(command: string, timeoutMs = 120_000): Promise<ExecResult> {
-	const { exec } = await import("node:child_process");
 	return new Promise((resolve) => {
 		exec(command, { timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 }, (error, stdout, stderr) => {
 			const code = error ? (typeof error.code === "number" ? error.code : 1) : 0;
@@ -86,7 +90,6 @@ export class LocalGpuRuntime {
 		const command = `${this.python} ${script}`;
 		const result = await this.execImpl(command, timeoutMs ?? this.kernelTimeoutMs);
 		// Clean up after use, not before (python needs to read the file).
-		const { rm } = await import("node:fs/promises");
 		void rm(script, { force: true }).catch(() => undefined);
 		if (result.code !== 0) {
 			throw new Error(`gpu kernel failed (${result.code}): ${result.stderr.trim() || result.stdout.trim()}`);
@@ -96,10 +99,7 @@ export class LocalGpuRuntime {
 
 	/** Write a temp python script, return its path (cleaned up by runKernel). */
 	private async writeTempScript(code: string): Promise<string> {
-		const { writeFile } = await import("node:fs/promises");
-		const { tmpdir } = await import("node:os");
-		const path = await import("node:path");
-		const file = path.join(tmpdir(), `pi-gpu-kernel-${Date.now()}-${Math.random().toString(36).slice(2)}.py`);
+		const file = join(tmpdir(), `pi-gpu-kernel-${Date.now()}-${Math.random().toString(36).slice(2)}.py`);
 		await writeFile(file, code, "utf8");
 		return file;
 	}

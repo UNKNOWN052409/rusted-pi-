@@ -4,19 +4,16 @@ export * from "./agent.ts";
 // Loop functions
 export * from "./agent-loop.ts";
 // Connection watchdog / GPU offload / Drive backup
-export * from "./builtin-skills.ts";
 // Huge-prompt chunking / resume sessions / trust scoring / load test / Telegram
 export * from "./chunk-prompt.ts";
 export * from "./connection-watchdog.ts";
 export * from "./connectors.ts";
-export * from "./container-runtime.ts";
 export * from "./council.ts";
 export * from "./doctor.ts";
 export * from "./drive-connector.ts";
 export * from "./effort-levels.ts";
 export * from "./future-agi.ts";
 export * from "./gpu-crash-manager.ts";
-export * from "./gpu-dispatcher.ts";
 export * from "./harness/agent-harness.ts";
 export {
 	type BranchPreparation,
@@ -56,26 +53,11 @@ export * from "./harness/tools/index.ts";
 export * from "./harness/types.ts";
 export * from "./harness/utils/shell-output.ts";
 export * from "./harness/utils/truncate.ts";
-export * from "./isolated-executor.ts";
-export * from "./load-test.ts";
-export * from "./local-gpu-runtime.ts";
-export {
-	callMcpTool,
-	connectMcpServer,
-	discoverMcpServer,
-	type McpClientHandle,
-	type McpConnection,
-	type McpServerConfig,
-	type McpToolCallResult,
-	type McpToolDefinition,
-} from "./mcp-client.ts";
 export * from "./progress.ts";
-// Proxy utilities
+// Prompt guard (browser-safe: pure string processing)
 export * from "./prompt-guard.ts";
+// Proxy utilities
 export * from "./proxy.ts";
-export * from "./remote-tunnel.ts";
-export * from "./session-store.ts";
-export * from "./ssh-gpu-runtime.ts";
 // Stream defaults
 export { setDefaultStreamFn } from "./stream-fn.ts";
 export * from "./swarm.ts";

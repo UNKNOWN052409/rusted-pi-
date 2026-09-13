@@ -234,7 +234,7 @@ function runPodman(spec: ContainerRunOptions, timeoutMs: number): ContainerRunRe
 	args.push(spec.image);
 	if (spec.command) args.push(...spec.command);
 	const quoted = args.map((a) => `"${a.replace(/"/g, '\\"')}"`).join(" ");
-	const r = shell(podmanEnvPrefix() + " podman " + quoted, timeoutMs);
+	const r = shell(`${podmanEnvPrefix()} podman ${quoted}`, timeoutMs);
 	return {
 		backend: "podman",
 		stdout: r.stdout,
@@ -295,8 +295,10 @@ function runUnshare(spec: ContainerRunOptions, timeoutMs: number): ContainerRunR
 
 function runSubprocess(spec: ContainerRunOptions, timeoutMs: number): ContainerRunResult {
 	const started = Date.now();
+	// shell() already wraps the command in `sh -lc "..."`; joining the argv
+	// here directly avoids a double `sh -c` wrap that swallows output.
 	const command = spec.command?.join(" ") ?? "true";
-	const r = shell(`sh -c "${command.replace(/"/g, '\\"')}"`, timeoutMs);
+	const r = shell(command, timeoutMs);
 	return {
 		backend: "subprocess",
 		stdout: r.stdout,

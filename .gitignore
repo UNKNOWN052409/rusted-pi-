@@ -42,3 +42,8 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+
+# Rust build artifacts (packages/rust-core)
+packages/rust-core/target/
+packages/rust-core/prebuilds/
+packages/rust-core/*.node

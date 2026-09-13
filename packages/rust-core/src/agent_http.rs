@@ -13,6 +13,7 @@ use std::thread;
 use std::time::Duration;
 
 const BUF_SIZE: usize = 1024 * 1024; // 1MB max body
+const HEADER_END: &[u8] = b"\r\n\r\n";
 
 pub fn start_http_server() {
     let port = std::env::var("PORT").unwrap_or_else(|_| "8080".to_string());
@@ -41,19 +42,48 @@ pub fn start_http_server() {
 }
 
 fn handle_connection(mut stream: TcpStream) {
-    stream.set_read_timeout(Some(Duration::from_secs(300)))
+    stream.set_read_timeout(Some(Duration::from_secs(120)))
         .unwrap_or(());
 
-    let mut buf = vec![0u8; BUF_SIZE];
-    let n = match stream.read(&mut buf) {
-        Ok(0) => return,
-        Ok(n) => n,
-        Err(_) => return,
+    // Read the full HTTP request: headers first, then body by Content-Length.
+    let mut buf = Vec::with_capacity(8192);
+    let header_end = loop {
+        let mut chunk = [0u8; 8192];
+        let n = match stream.read(&mut chunk) {
+            Ok(0) => return,
+            Ok(n) => n,
+            Err(_) => return,
+        };
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(pos) = find_subslice(&buf, HEADER_END) {
+            break pos;
+        }
+        if buf.len() > BUF_SIZE {
+            let _ = stream.write_all(b"HTTP/1.1 413 Payload Too Large\r\nContent-Length: 0\r\n\r\n");
+            return;
+        }
     };
 
-    let request = String::from_utf8_lossy(&buf[..n]);
+    let content_length: usize = parse_content_length(&String::from_utf8_lossy(&buf[..header_end]))
+        .unwrap_or(0)
+        .min(BUF_SIZE);
 
-    let (method, path, body) = match parse_http_request(&request) {
+    // Read the body in a loop until we have all Content-Length bytes.
+    while buf.len() < header_end + 4 + content_length {
+        let mut chunk = [0u8; 8192];
+        let n = match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(_) => return,
+        };
+        buf.extend_from_slice(&chunk[..n]);
+    }
+
+    let body_start = header_end + 4;
+    let header = String::from_utf8_lossy(&buf[..header_end]);
+    let body = String::from_utf8_lossy(&buf[body_start..body_start + content_length.min(buf.len() - body_start)]);
+
+    let (method, path) = match parse_request_line(&header) {
         Some(m) => m,
         None => {
             let _ = stream.write_all(b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n");
@@ -63,10 +93,10 @@ fn handle_connection(mut stream: TcpStream) {
 
     match (method, path) {
         ("GET", "/health") => handle_health(stream),
-        ("POST", "/agent") => handle_agent(stream, body, false),
-        ("POST", "/agent/stream") => handle_agent(stream, body, true),
+        ("POST", "/agent") => handle_agent(stream, &body, false),
+        ("POST", "/agent/stream") => handle_agent(stream, &body, true),
         ("GET", "/sessions") => handle_list_sessions(stream),
-        ("POST", "/") => handle_agent(stream, body, false),
+        ("POST", "/") => handle_agent(stream, &body, false),
         _ => {
             let resp = b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
             let _ = stream.write_all(resp);
@@ -74,21 +104,28 @@ fn handle_connection(mut stream: TcpStream) {
     }
 }
 
-fn parse_http_request(request: &str) -> Option<(&str, &str, &str)> {
-    let mut lines = request.lines();
-    let first_line = lines.next()?;
+fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+fn parse_request_line(header: &str) -> Option<(&str, &str)> {
+    let first_line = header.lines().next()?;
     let parts: Vec<&str> = first_line.split_whitespace().collect();
     if parts.len() < 2 {
         return None;
     }
-    let method = parts[0];
-    let path = parts[1];
+    Some((parts[0], parts[1]))
+}
 
-    let body_start = request.find("\r\n\r\n")?;
-    let body = &request[body_start + 4..];
-    let body = body.trim_end_matches('\0').trim();
-
-    Some((method, path, body))
+fn parse_content_length(header: &str) -> Option<usize> {
+    for line in header.lines() {
+        if let Some(value) = line.split_once(':') {
+            if value.0.trim().eq_ignore_ascii_case("content-length") {
+                return value.1.trim().parse().ok();
+            }
+        }
+    }
+    None
 }
 
 fn handle_health(mut stream: TcpStream) {
@@ -227,6 +264,28 @@ fn handle_agent_streaming(
     let _ = stream.write_all(headers.as_bytes());
     let _ = stream.flush();
 
+    // Render and other reverse proxies drop connections with no data after
+    // roughly 60s. Tool calls can run longer than that without emitting a
+    // delta, so send a comment keep-alive on a cloned socket every 15s.
+    let keepalive_stream = match stream.try_clone() {
+        Ok(s) => Some(s),
+        Err(_) => None,
+    };
+    let keepalive_stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_flag = keepalive_stop.clone();
+    if let Some(mut ka) = keepalive_stream {
+        thread::spawn(move || {
+            while !stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                thread::sleep(Duration::from_secs(15));
+                if stop_flag.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                let _ = ka.write_all(b": keepalive\n\n");
+                let _ = ka.flush();
+            }
+        });
+    }
+
     // Use streaming agent loop
     let result = crate::agent_loop::run_agent_streaming(
         prompt,
@@ -244,6 +303,8 @@ fn handle_agent_streaming(
             let _ = stream.flush();
         },
     );
+
+    keepalive_stop.store(true, std::sync::atomic::Ordering::Relaxed);
 
     match result {
         Ok((_content, messages)) => {

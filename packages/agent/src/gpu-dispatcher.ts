@@ -9,6 +9,8 @@
  * checkpoint them.
  */
 
+import { RustBridge } from "./rust-bridge.ts";
+
 export interface GpuTask<TResult = unknown> {
 	id: string;
 	/** Executes the task (on the GPU when present, otherwise in-process). */
@@ -22,6 +24,32 @@ export interface GpuRuntime {
 	available: () => Promise<boolean>;
 	/** Name of the GPU, e.g. "T4" or "A100". */
 	name?: () => Promise<string>;
+}
+
+/**
+ * GPU runtime backed by the pi-native Rust binary (packages/rust-core).
+ * Probing goes through the queue-based rust bridge, so concurrent
+ * dispatchers share one subprocess safely. When the binary is missing the
+ * probe reports no GPU and the dispatcher falls back to in-process mode.
+ */
+export class RustGpuRuntime implements GpuRuntime {
+	private readonly bridge: RustBridge;
+	private gpuName: string | null = null;
+
+	constructor(bridge: RustBridge = new RustBridge()) {
+		this.bridge = bridge;
+	}
+
+	async available(): Promise<boolean> {
+		const info = await this.bridge.detectGpu();
+		this.gpuName = info.available ? info.name : null;
+		return info.available;
+	}
+
+	async name(): Promise<string> {
+		if (this.gpuName === null) await this.available();
+		return this.gpuName ?? "unknown";
+	}
 }
 
 /** Task lifecycle status, as a const object (erasable-syntax friendly). */

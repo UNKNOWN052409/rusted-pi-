@@ -13,6 +13,8 @@
  * real SSH client; the default uses `node:child_process` `exec` with a shell.
  */
 
+import { exec } from "node:child_process";
+
 export interface SshExecResult {
 	code: number;
 	stdout: string;
@@ -201,8 +203,6 @@ export class SshGpuRuntime {
 
 /** Default executor: node child_process exec with a shell. */
 async function defaultSshExec(command: string, timeoutMs?: number): Promise<SshExecResult> {
-	// Lazy import so browsers / non-node bundles don't pay for it.
-	const { exec } = await import("node:child_process");
 	return new Promise<SshExecResult>((resolve) => {
 		exec(command, { timeout: timeoutMs, maxBuffer: 16 * 1024 * 1024 }, (error, stdout, stderr) => {
 			resolve({

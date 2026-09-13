@@ -196,7 +196,7 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("maps groq qwen3 reasoning levels to default reasoning_effort", async () => {
-		const model = getModel("groq", "qwen/qwen3-32b")!;
+		const model = getModel("groq", "qwen/qwen3.6-27b")!;
 		let payload: unknown;
 
 		await streamSimple(
@@ -437,7 +437,7 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("omits tool_stream for unsupported z.ai models", async () => {
-		const baseModel = getModel("zai", "glm-5.2-highspeed[1m]")!;
+		const baseModel = getModel("zai", "glm-5.2-highspeed")!;
 		const { zaiToolStream: _omit, ...compatWithoutToolStream } = baseModel.compat ?? {};
 		const model = {
 			...baseModel,
@@ -479,7 +479,7 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("respects explicit z.ai tool_stream compat override", async () => {
-		const baseModel = getModel("zai", "glm-5.2-highspeed[1m]")!;
+		const baseModel = getModel("zai", "glm-5.2-highspeed")!;
 		const model = {
 			...baseModel,
 			compat: {
@@ -1369,7 +1369,7 @@ describe("openai-completions tool_choice", () => {
 	});
 
 	it("sends max_tokens for OpenCode completions models", async () => {
-		const cases = [getModel("opencode-go", "kimi-k2.6")!, getModel("opencode", "grok-build-0.1")!] as const;
+		const cases = [getModel("opencode-go", "kimi-k2.6")!, getModel("opencode", "kimi-k2.6")!] as const;
 
 		for (const model of cases) {
 			let payload: unknown;

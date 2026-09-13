@@ -253,19 +253,48 @@ fn cmd_bash(args: &HashMap<String, serde_json::Value>) -> Result<Vec<ContentBloc
     let shell = if cfg!(target_os = "windows") { "cmd.exe" } else { "sh" };
     let flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
 
-    let output = Command::new(shell)
+    // Enforce the timeout by killing the child when it exceeds the limit.
+    // A hung command would otherwise block the agent turn forever, which
+    // looks like a disconnected session to the client.
+    let mut child = Command::new(shell)
         .arg(flag)
         .arg(&command)
-        .output()
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
         .map_err(|e| format!("Failed to execute command: {}", e))?;
 
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs.max(1));
+    let status = loop {
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("Command timed out after {}s and was killed", timeout_secs));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(e) => return Err(format!("Failed to wait for command: {}", e)),
+        }
+    };
+
+    let mut stdout = Vec::new();
+    let mut stderr = Vec::new();
+    use std::io::Read;
+    if let Some(mut out) = child.stdout.take() {
+        let _ = out.read_to_end(&mut stdout);
+    }
+    if let Some(mut err) = child.stderr.take() {
+        let _ = err.read_to_end(&mut stderr);
+    }
+
     let mut result = String::new();
-    if !output.stdout.is_empty() {
-        let stdout_str = String::from_utf8_lossy(&output.stdout);
+    if !stdout.is_empty() {
+        let stdout_str = String::from_utf8_lossy(&stdout);
         result.push_str(&stdout_str);
     }
-    if !output.stderr.is_empty() {
-        let stderr_str = String::from_utf8_lossy(&output.stderr);
+    if !stderr.is_empty() {
+        let stderr_str = String::from_utf8_lossy(&stderr);
         if !result.is_empty() {
             result.push('\n');
         }
@@ -279,7 +308,7 @@ fn cmd_bash(args: &HashMap<String, serde_json::Value>) -> Result<Vec<ContentBloc
     }
 
     if result.is_empty() {
-        result = format!("Command completed with exit code: {}", output.status.code().unwrap_or(-1));
+        result = format!("Command completed with exit code: {}", status.code().unwrap_or(-1));
     }
 
     Ok(vec![ContentBlock::Text { text: result }])

@@ -261,12 +261,7 @@ fn call_llm(state: &AgentState, tools: &[ToolDefinition]) -> Result<LlmResponse,
         .timeout_read(std::time::Duration::from_secs(120))
         .build();
 
-    let response = agent
-        .post(&state.config.endpoint)
-        .set("Content-Type", "application/json")
-        .set("Authorization", &format!("Bearer {}", state.config.api_key))
-        .send_string(&body)
-        .map_err(|e| format!("LLM API request failed: {}", e))?;
+    let response = call_llm_with_retry(&agent, state, &body)?;
 
     let status = response.status();
     let response_body = response.into_string()
@@ -280,6 +275,73 @@ fn call_llm(state: &AgentState, tools: &[ToolDefinition]) -> Result<LlmResponse,
         .map_err(|e| format!("Failed to parse LLM response: {} -- body: {}", e, &response_body[..response_body.floor_char_boundary(response_body.len().min(500))]))?;
 
     Ok(llm_response)
+}
+
+/// Send the non-streaming LLM request, retrying transient failures with
+/// capped exponential backoff (1s, 2s, 4s — max 3 retries), matching the Node
+/// agent's retry policy in packages/ai/src/utils/retry.ts.
+fn call_llm_with_retry(
+    agent: &ureq::Agent,
+    state: &AgentState,
+    body: &str,
+) -> Result<ureq::Response, String> {
+    let max_retries = 3;
+    let mut attempt = 0;
+    loop {
+        let result = agent
+            .post(&state.config.endpoint)
+            .set("Content-Type", "application/json")
+            .set("Authorization", &format!("Bearer {}", state.config.api_key))
+            .send_string(body);
+
+        match result {
+            Ok(response) => {
+                let status = response.status();
+                if is_retryable_status(status) && attempt < max_retries {
+                    attempt += 1;
+                    eprintln!("LLM request got {} (attempt {}), retrying", status, attempt);
+                    std::thread::sleep(retry_delay(attempt));
+                    continue;
+                }
+                return Ok(response);
+            }
+            Err(ureq::Error::Status(status, response)) => {
+                if is_retryable_status(status) && attempt < max_retries {
+                    attempt += 1;
+                    eprintln!("LLM request got {} (attempt {}), retrying", status, attempt);
+                    std::thread::sleep(retry_delay(attempt));
+                    continue;
+                }
+                let body_text = response.into_string().unwrap_or_default();
+                return Err(format!("LLM API returned {}: {}", status, body_text));
+            }
+            Err(ureq::Error::Transport(transport)) => {
+                if is_retryable_transport(&transport) && attempt < max_retries {
+                    attempt += 1;
+                    eprintln!("LLM request transport error (attempt {}): {}", attempt, transport);
+                    std::thread::sleep(retry_delay(attempt));
+                    continue;
+                }
+                return Err(format!("LLM API request failed: {}", transport));
+            }
+        }
+    }
+}
+
+fn is_retryable_status(status: u16) -> bool {
+    status == 408 || status == 429 || (status >= 500 && status != 501 && status != 505)
+}
+
+fn is_retryable_transport(transport: &ureq::Transport) -> bool {
+    use ureq::ErrorKind;
+    match transport.kind() {
+        ErrorKind::Dns | ErrorKind::ConnectionFailed | ErrorKind::Io | ErrorKind::ProxyConnect => true,
+        _ => false,
+    }
+}
+
+fn retry_delay(attempt: u32) -> std::time::Duration {
+    std::time::Duration::from_millis(1000u64.saturating_mul(1 << (attempt.saturating_sub(1))))
 }
 
 #[cfg(test)]
