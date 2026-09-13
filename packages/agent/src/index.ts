@@ -71,6 +71,7 @@ export {
 } from "./mcp-client.ts";
 export * from "./progress.ts";
 // Proxy utilities
+export * from "./prompt-guard.ts";
 export * from "./proxy.ts";
 export * from "./remote-tunnel.ts";
 export * from "./session-store.ts";
