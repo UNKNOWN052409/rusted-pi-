@@ -97,11 +97,13 @@ describe("SessionStore (resume tokens)", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("lists sessions newest first", () => {
+	it("lists sessions newest first", async () => {
 		const dir = tempDir();
 		const store = new SessionStore({ dir });
 		const a = store.create({ cwd: "/a", task: "first" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
 		const b = store.create({ cwd: "/b", task: "second" });
+		await new Promise((resolve) => setTimeout(resolve, 5));
 		store.update(a.token, { progress: 10 });
 		const list = store.list();
 		expect(list.map((s) => s.token)).toEqual([a.token, b.token]);

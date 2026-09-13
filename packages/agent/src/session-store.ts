@@ -93,7 +93,7 @@ export class SessionStore {
 				}
 			})
 			.filter((s): s is SessionState => s !== null)
-			.sort((a, b) => b.updatedAt - a.updatedAt);
+			.sort((a, b) => b.updatedAt - a.updatedAt || a.createdAt - b.createdAt);
 	}
 
 	private fileFor(token: string): string {

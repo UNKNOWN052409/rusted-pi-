@@ -31,10 +31,11 @@ describe("container-runtime", () => {
 			// still prove the forced path degrades honestly.
 			const rt = createContainerRuntime("wasmtime");
 			const res = await rt.run({ image: "", command: [] });
+			// Forcing a backend that is not actually installed must degrade
+			// honestly (never claim a successful sandbox run), NOT fabricate a
+			// hello-world output.
 			expect(["wasmtime", "none"]).toContain(rt.backend);
-			if (rt.backend === "wasmtime") {
-				expect(res.stdout).toContain("hello from wasi");
-			}
+			expect(res.stdout).toBe("");
 			return;
 		}
 		const rt = createContainerRuntime("wasmtime");
